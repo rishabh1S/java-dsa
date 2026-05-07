@@ -1,0 +1,66 @@
+Devin Task: Modify /addCommittee and /updateCommittee APIs — BDD Scenarios 1 & 2
+Service: BrccMeetingPlannerService
+Branch: feature/G159912LP-630
+Files in scope: CommitteeController.java, CommitteeService.java, CommitteeServiceImpl.java, CreateCommitteeRequest.java, UpdateCommitteeDTO.java
+
+Scenario 1 — /addCommittee
+DTO (CreateCommitteeRequest):
+Ensure these fields exist:
+
+committeeName (String, required)
+parentCommitteeId (Long, optional)
+description (String, optional)
+reasonForCreation (String, mandatory — annotate with @NotBlank)
+
+Controller:
+
+Change MultipartFile attachment → List<MultipartFile> attachments (required = false)
+Add file type validation: before passing to service, iterate attachments and reject any file whose original filename does not end with .pdf or .msg — return HTTP 400 with message "Only .pdf and .msg file types are allowed" if violated
+Add @Valid to the DTO deserialization step so @NotBlank on reasonForCreation triggers HTTP 400
+Keep response as ResponseEntity.ok(committeeCount)
+
+Service (CommitteeServiceImpl.createCommittee):
+
+Update method signature to accept List<MultipartFile> attachments instead of single MultipartFile
+Handle storage/processing of multiple attachments accordingly
+No audit log entry required
+
+
+Scenario 2 — /updateCommittee
+DTO (UpdateCommitteeDTO):
+Ensure these fields exist:
+
+committeeId (Long, required)
+committeeName (String, optional)
+parentCommitteeId (Long, optional)
+description (String, optional)
+reasonForModification (String, mandatory — annotate with @NotBlank)
+
+Controller:
+
+Change MultipartFile attachment → List<MultipartFile> attachments (required = false)
+Add same file type validation as above — reject non .pdf / .msg files with HTTP 400
+Add @Valid to DTO deserialization so @NotBlank on reasonForModification triggers HTTP 400
+Keep response as Map.of(Constants.MESSAGE, "Committee updated successfully") with HTTP 200
+
+Service (CommitteeServiceImpl.updateCommittee):
+
+Update method signature to accept List<MultipartFile> attachments instead of single MultipartFile
+Handle storage/processing of multiple attachments accordingly
+No audit log entry required
+
+
+Validation & Exception Handling
+
+Check if a @ControllerAdvice class (e.g. GlobalExceptionHandler) already exists in the codebase that handles MethodArgumentNotValidException
+If it exists — verify it returns a meaningful HTTP 400 response with field-level error messages; enhance if needed
+If it does not exist — create one that handles MethodArgumentNotValidException and returns HTTP 400 with the list of violated field messages
+
+
+Hard Constraints — Do Not Touch
+
+Do not change endpoint paths /addCommittee or /updateCommittee
+Do not change consumes = MediaType.MULTIPART_FORM_DATA_VALUE or produces = "application/json"
+Do not create or call any audit log service
+Do not modify fetchAllCommittees, fetchCommitteeCount, markCommitteeInactive, fetchCommitteeHistory or any other endpoint
+Do not change the existing response structure of either endpoint
