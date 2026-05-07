@@ -1,0 +1,63 @@
+Devin Task: Create /deleteCommittee API — BDD Scenarios 3 & 4
+Service: BrccMeetingPlannerService
+Branch: feature/G159912LP-630
+This is a net-new endpoint — no existing delete API exists.
+
+Endpoint Specification
+@DeleteMapping(
+  path = "/deleteCommittee",
+  consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+  produces = "application/json"
+)
+Method signature:
+public ResponseEntity<Map<String, String>> deleteCommittee(
+    @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
+    @RequestPart String request
+) throws JsonProcessingException
+Request DTO — create DeleteCommitteeRequest.java:
+
+committeeId (Long, required — @NotNull)
+reasonForDeletion (String, required — @NotBlank)
+
+
+Scenario 3 — Successful Deletion (no child committees)
+Controller:
+
+Deserialize request via new ObjectMapper().readValue(request, DeleteCommitteeRequest.class)
+Add @Valid to trigger @NotBlank / @NotNull validation — HTTP 400 if violated
+File type validation: iterate attachments, reject any file not ending in .pdf or .msg — return HTTP 400 with message "Only .pdf and .msg file types are allowed"
+Call committeeService.deleteCommittee(dto, attachments)
+On success return ResponseEntity.ok(Map.of(Constants.MESSAGE, "Committee deleted successfully"))
+
+Service interface (CommitteeService):
+
+Add method: void deleteCommittee(DeleteCommitteeRequest dto, List<MultipartFile> attachments)
+
+Service impl (CommitteeServiceImpl.deleteCommittee):
+
+Check if the committee identified by committeeId has any child committees in the DB
+If no children — hard delete the committee record from the DB (permanent removal)
+Handle attachment storage/processing the same way existing createCommittee and updateCommittee handle attachments — follow the exact same pattern already in place
+No audit log entry required
+
+
+Scenario 4 — Deletion Blocked (has child committees)
+Service impl (same deleteCommittee method):
+
+If the committee has one or more child committees — do not delete
+Throw a custom exception (e.g. CommitteeHasChildrenException) with message: "Deletion failed. Please move or delete all child committees before deleting this committee."
+
+Exception Handling:
+
+Check if GlobalExceptionHandler already handles a custom business exception pattern
+If yes — add a handler for CommitteeHasChildrenException returning HTTP 409 (Conflict) with the error message
+If no such pattern exists — create CommitteeHasChildrenException.java as a RuntimeException and add the @ExceptionHandler in GlobalExceptionHandler returning HTTP 409
+
+
+Hard Constraints — Do Not Touch
+
+Do not implement soft delete — this is a hard delete (remove row from DB)
+Do not create or call any audit log service
+Do not modify any existing endpoints (/addCommittee, /updateCommittee, markCommitteeInactive, fetchAllCommittees, fetchCommitteeCount, fetchCommitteeHistory)
+Follow the exact same multipart handling, ObjectMapper deserialization, and attachment processing patterns already established in createCommittee and updateCommittee — maintain consistency across the codebase
+Use Constants.MESSAGE for response keys, consistent with existing endpoints
