@@ -1,0 +1,127 @@
+We are implementing an export feature in the cohub-agenda-builder Spring Boot microservice.
+
+## Context
+
+This service exposes an export API to the client. It:
+1. Receives export request with fileType, entityType, rowIds, and column keys
+2. Resolves row data from its own DB based on rowIds and entityType
+3. Sends resolved data to meeting-planner service to generate XLSX or PPTX bytes via RestTemplate
+4. For PDF: takes the PPTX bytes and forwards them to content-creator service for conversion
+5. Streams the final file back to the client
+
+---
+
+## Tech Stack
+
+- Java 17
+- Spring Boot 3.x
+- RestTemplate for internal service calls
+- Oracle DB / JPA for data resolution
+- Apache POI is NOT present in this service and not required here
+
+---
+
+## Package Structure to follow
+
+## Package Structure
+
+├── controller/
+│   └── ExportController.java
+├── service/
+│   └── AgendaExportService.java
+├── orchestrator/
+│   └── ExportOrchestrator.java
+├── dto/
+│   ├── ExportRequest.java
+│   ├── ColumnConfig.java
+│   ├── ExcelGenerateRequest.java
+│   └── PptxGenerateRequest.java
+├── enums/
+│   └── ExportFileType.java
+    └── ExportEntityType.java
+├── client/
+│   └── FileGenerationClient.java
+├── exception/
+│   ├── ExportException.java
+│   └── ExportExceptionHandler.java
+└── config/
+    └── RestTemplateConfig.java
+
+---
+
+## API Contract
+
+### Inbound (from client)
+
+POST /api/v1/export
+Content-Type: application/json
+
+{
+  "fileType": "PDF",                     // XLSX | PPTX | PDF
+  "rowIds": ["row-101", "row-102"],      // max 1000
+  "columns": ["topic", "owner", "status"]
+}
+
+Response: binary file stream with correct Content-Type and Content-Disposition headers
+
+### Outbound to meeting-planner
+
+POST http://meeting-planner/internal/generate/excel
+POST http://meeting-planner/internal/generate/pptx
+Content-Type: application/json
+X-Internal-Service: cohub-agenda-builder
+
+Body:
+{
+  "sheetTitle": "Monthly Agenda",
+  "columns": [
+    { "header": "Topic", "key": "topic" }
+  ],
+  "rows": [
+    { "topic": "Q2 Review", "owner": "Rishabh" }
+  ]
+}
+
+Response: application/octet-stream (raw bytes)
+
+### Outbound to content-creator (PDF only)
+
+POST http://content-creator/internal/convert/pptx-to-pdf
+Content-Type: application/octet-stream
+X-Internal-Service: cohub-agenda-builder
+
+Body: raw pptx bytes
+
+Response: application/octet-stream (raw pdf bytes)
+
+---
+
+## Class Responsibilities
+
+- ExportController: thin, delegates to ExportOrchestrator, sets response headers
+- ExportOrchestrator: owns full flow — calls AgendaExportService → ColumnMapper → FileGenerationClient → streams response
+- AgendaExportService: fetches CohubAgenda entities by rowIds from JPA repository, maps each to Map<String, Object> with all available fields as keys. Stub with dummy data for now.
+- ColumnMapper: trims each row map to only requested column keys, fills empty string for missing keys
+- ExportMetadataBuilder: builds fileName, sheetTitle, contentType from fileType internally. sheetTitle is always "Monthly Agenda". fileName is "monthly-agenda-{yyyyMMdd}.{ext}"
+- FileGenerationClient: wraps RestTemplate calls to meeting-planner and content-creator, always adds X-Internal-Service header, returns byte[]
+- FileType enum: holds contentType string and file extension per type
+- ExportExceptionHandler: ExportException → 400, IOException → 500, RestClientException → 503
+
+---
+
+## Validation on ExportRequest
+
+- fileType: @NotNull
+- rowIds: @NotEmpty, @Size(max = 1000)
+- columns: @NotEmpty
+
+---
+
+## application.properties entries
+
+clients.meeting-planner.url=http://meeting-planner
+clients.content-creator.url=http://content-creator
+
+---
+
+Write all classes completely., the controller is already in place, just continue. No TODOs. AgendaExportService can return stub data for now.
